@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自費診療 見積書作成ツール</title>
+<!-- PDF生成用ライブラリ(ネット接続時のみ有効。オフライン時は印刷からPDF保存) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+/* ============================================================
+   ▼▼▼ 本部設定エリア ▼▼▼
+   Googleスプレッドシートで料金を一括管理する場合は、
+   下の2つの URL に「ウェブに公開」で取得したCSVのURLを貼り付けてください。
+   空欄("")のままの場合は、このファイル内蔵の料金表を使用します。
+   設定手順は同梱の「設定手順書」を参照。
+   ============================================================ */
+const CONFIG = {
+  ITEMS_CSV_URL: "",    // 料金マスタのCSV公開URL
+  CLINICS_CSV_URL: "",  // 医院リストのCSV公開URL
+  CORP_NAME: "医療法人社団 ○○会"  // 法人名(見積書に表示)
+};
+
+/* ---- 内蔵データ(スプレッドシート未設定時に使用) ----
+   ※仮の一般的な価格です。実際の料金に差し替えてください。
+   金額はすべて税込で登録。 */
+const DEFAULT_ITEMS = [
+  ["インプラント","CT撮影・診断料",15000,""],
+  ["インプラント","インプラント埋入手術(1本)",250000,""],
+  ["インプラント","上部構造(セラミック冠)",150000,""],
+  ["インプラント","骨造成(GBR)",100000,""],
+  ["インプラント","サイナスリフト",150000,""],
+  ["かぶせ物・詰め物","オールセラミッククラウン",120000,""],
+  ["かぶせ物・詰め物","ジルコニアクラウン",100000,""],
+  ["かぶせ物・詰め物","メタルボンドクラウン",90000,""],
+  ["かぶせ物・詰め物","ゴールドクラウン",110000,""],
+  ["かぶせ物・詰め物","セラミックインレー",50000,""],
+  ["かぶせ物・詰め物","ゴールドインレー",60000,""],
+  ["かぶせ物・詰め物","ラミネートベニア",80000,""],
+  ["入れ歯","金属床義歯(コバルトクロム)",250000,""],
+  ["入れ歯","チタン床義歯",350000,""],
+  ["入れ歯","ノンクラスプデンチャー",150000,""],
+  ["矯正","矯正相談料",3000,""],
+  ["矯正","精密検査・診断料",40000,""],
+  ["矯正","全顎矯正(ワイヤー・表側)",800000,""],
+  ["矯正","マウスピース型矯正",900000,""],
+  ["矯正","部分矯正",300000,""],
+  ["矯正","調整料(来院毎)",5000,""],
+  ["矯正","保定装置",30000,""],
+  ["ホワイトニング・クリーニング","オフィスホワイトニング",33000,""],
+  ["ホワイトニング・クリーニング","ホームホワイトニング",27500,""],
+  ["ホワイトニング・クリーニング","デュアルホワイトニング",55000,""],
+  ["ホワイトニング・クリーニング","PMTC(クリーニング)",11000,""]
+];
+const DEFAULT_CLINICS = [
+  ["○○歯科クリニック 本院","〒100-0001 東京都千代田区○○1-2-3","03-0000-0001"],
+  ["○○歯科クリニック 駅前医院","〒100-0002 東京都千代田区△△4-5-6","03-0000-0002"],
+  ["○○歯科クリニック 中央医院","〒100-0003 東京都千代田区□□7-8-9","03-0000-0003"]
+];
+</script>
+<style>
+  :root {
+    --primary: #1a6b8f; --primary-dark: #124e69; --bg: #f0f4f7;
+    --border: #d5dde3; --text: #2c3540; --muted: #7a8794; --accent: #e8f2f7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  /* ===== 操作パネル ===== */
+  .toolbar { background: var(--primary); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
+  .toolbar h1 { font-size: 17px; margin: 0; flex: 1; }
+  .toolbar .src { font-size: 11px; opacity: .85; }
+  .btn { border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: inherit; }
+  .btn-print { background: #fff; color: var(--primary-dark); font-weight: bold; }
+  .btn-print:hover { background: #e8f2f7; }
+  .btn-clearall { background: #fdecea; color: #c0392b; font-weight: bold; }
+  .btn-clearall:hover { background: #f9d6d2; }
+  .panel { max-width: 1000px; margin: 16px auto 0; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; color: var(--primary-dark); border-left: 4px solid var(--primary); padding-left: 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input, select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; }
+  input:focus, select:focus { outline: 2px solid var(--primary); border-color: var(--primary); }
+  /* ===== 歯列チャート ===== */
+  .tooth-chart { display: inline-block; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: #fafcfd; }
+  .tc-row { display: flex; align-items: center; gap: 3px; }
+  .tc-row + .tc-row { border-top: 2px solid var(--text); padding-top: 4px; margin-top: 4px; }
+  .tc-side { font-size: 11px; color: var(--muted); width: 34px; text-align: center; flex-shrink: 0; }
+  .tc-mid { width: 0; border-left: 2px solid var(--text); align-self: stretch; margin: 0 4px; }
+  .tooth { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; font-family: inherit; padding: 0; }
+  .tooth:hover { background: var(--accent); }
+  .tooth.on { background: var(--primary); color: #fff; border-color: var(--primary-dark); font-weight: bold; }
+  .btn-bulk { background: #eef2f5; border: 1px solid var(--border); font-size: 12px; padding: 6px 12px; }
+  .btn-bulk:hover { background: var(--accent); }
+
+  .btn-add { background: var(--primary); color: #fff; font-weight: bold; }
+  .btn-add:hover { background: var(--primary-dark); }
+  .btn-del { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; padding: 2px 6px; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  /* ===== 見積書プレビュー ===== */
+  .sheet { max-width: 1000px; margin: 16px auto 40px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 40px 48px; }
+  .q-title { text-align: center; font-size: 26px; letter-spacing: 16px; margin: 0 0 24px; padding-bottom: 8px; border-bottom: 3px double var(--text); }
+  .q-head { display: flex; justify-content: space-between; margin-bottom: 20px; }
+  .q-patient { font-size: 16px; }
+  .q-patient .p-name { font-size: 20px; border-bottom: 1px solid var(--text); padding: 0 24px 4px 4px; display: inline-block; min-width: 220px; }
+  .q-patient .p-karte { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .q-clinic { text-align: right; font-size: 12px; line-height: 1.7; }
+  .q-clinic .c-name { font-size: 15px; font-weight: bold; }
+  .q-meta { font-size: 12px; text-align: right; margin-bottom: 8px; color: var(--muted); }
+  table.q-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .q-table th { background: var(--accent); color: var(--primary-dark); font-size: 12px; padding: 8px; border: 1px solid var(--border); }
+  .q-table td { padding: 8px; border: 1px solid var(--border); font-size: 14px; }
+  .q-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .q-table .ctr { text-align: center; }
+  .q-table input.cell { border: none; background: #fdf6e3; width: 100%; padding: 4px; font-size: 14px; border-radius: 4px; }
+  .q-table input.cell.num { text-align: right; }
+  .q-table input.cell.qty { width: 56px; text-align: center; }
+  .q-table .cell-edit { background: #fdf6e3; border-radius: 4px; padding: 4px; min-height: 1.4em; white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere; line-height: 1.5; }
+  .q-table .cell-edit:focus { outline: 2px solid var(--primary); }
+  .empty-msg td { text-align: center; color: var(--muted); padding: 24px; font-size: 13px; }
+  .totals { margin-top: 16px; margin-left: auto; width: 340px; font-size: 14px; }
+  .totals .t-row { display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .totals .t-grand { font-size: 19px; font-weight: bold; background: var(--accent); border: 2px solid var(--primary); border-radius: 6px; padding: 10px 12px; margin-top: 8px; color: var(--primary-dark); }
+  .q-remarks { margin-top: 24px; font-size: 12px; }
+  .q-remarks textarea { width: 100%; min-height: 60px; border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: inherit; font-size: 13px; resize: vertical; }
+  .q-notice { margin-top: 12px; font-size: 12px; line-height: 1.9; white-space: pre-wrap; background: #fdf6e3; border-radius: 6px; padding: 10px 12px; }
+  .q-notice:focus { outline: 2px solid var(--primary); }
+
+  /* ===== 同意・署名欄 ===== */
+  .q-consent { margin-top: 24px; border: 1px solid var(--text); border-radius: 6px; padding: 16px 20px; }
+  .q-consent .c-text { font-size: 13px; margin-bottom: 10px; }
+  .sig-row { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 14px; font-size: 13px; }
+  .sig-label { width: 116px; flex-shrink: 0; }
+  .sig-wrap { display: inline-flex; align-items: flex-end; gap: 6px; }
+  .sig-pad { width: 280px; height: 80px; border: 1px dashed var(--border); border-bottom: 1px solid var(--text); border-radius: 4px 4px 0 0; touch-action: none; background: #fff; }
+  .sig-pad.sig-small { width: 150px; height: 44px; }
+  .sig-pad.sig-year { width: 78px; height: 40px; }
+  .sig-pad.sig-md { width: 52px; height: 40px; }
+  .sig-clear { background: #eef2f5; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; padding: 3px 8px; cursor: pointer; }
+  .sig-rel { font-size: 13px; }
+  .q-consent .c-note { font-size: 10.5px; color: var(--muted); line-height: 1.7; margin-bottom: 0; }
+
+  /* ===== 印刷時 ===== */
+  @media print {
+    body { background: #fff; }
+    .toolbar, .panel, .btn-del, .no-print { display: none !important; }
+    .sheet { border: none; border-radius: 0; margin: 0; padding: 0; max-width: none; }
+    .q-table input.cell, .q-table .cell-edit, .q-notice { background: none; }
+    .q-notice { padding: 0; }
+    ::placeholder { color: transparent !important; } /* 印刷時は例文を出さない */
+    .q-remarks textarea { border: none; resize: none; }
+    .sig-pad { border: none; border-bottom: 1px solid var(--text); }
+    @page { size: A4; margin: 15mm; }
+  }
+  /* PDF出力用(html2canvasのクローンに適用) */
+  body.pdf-mode .sheet { border: none; border-radius: 0; margin: 0; padding: 0; max-width: none; width: 680px; }
+  body.pdf-mode .no-print { display: none !important; }
+  body.pdf-mode input.cell, body.pdf-mode .cell-edit, body.pdf-mode .q-notice { background: none !important; }
+  body.pdf-mode .sig-pad { border: none; border-bottom: 1px solid var(--text); }
+  /* A4計測用(印刷時のレイアウトを再現して高さを測る) */
+  .print-sim { width: 680px !important; max-width: none !important; padding: 0 !important; border: none !important; margin: 0 !important; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>自費診療 見積書作成ツール</h1>
+  <span class="src" id="dataSource">料金表: 読み込み中…</span>
+  <button class="btn btn-clearall" onclick="clearAll()">🗑 オールクリア</button>
+  <button class="btn btn-print" onclick="savePDF()">📄 PDF保存</button>
+  <button class="btn btn-print" onclick="window.print()">🖨 印刷</button>
+</div>
+
+<!-- 基本情報 -->
+<div class="panel">
+  <h2>基本情報</h2>
+  <div class="row">
+    <div class="field"><label>医院</label>
+      <select id="clinicSelect" onchange="renderClinic()"></select></div>
+    <div class="field"><label>発行日</label>
+      <input type="date" id="issueDate" onchange="renderMeta()"></div>
+    <div class="field"><label>患者氏名</label>
+      <input type="text" id="patientName" placeholder="山田 太郎" oninput="renderMeta()" style="width:180px"></div>
+    <div class="field"><label>カルテ番号</label>
+      <input type="text" id="karteNo" placeholder="12345" oninput="renderMeta()" style="width:110px"></div>
+    <div class="field"><label>説明者</label>
+      <input type="text" id="doctorName" placeholder="佐藤 一郎" oninput="renderClinic()" style="width:160px"></div>
+  </div>
+</div>
+
+<!-- 項目追加 -->
+<div class="panel">
+  <h2>治療項目を追加</h2>
+  <div class="row">
+    <div class="field"><label>カテゴリ</label>
+      <select id="catSelect" onchange="fillItems()"></select></div>
+    <div class="field"><label>治療項目</label>
+      <select id="itemSelect" style="min-width:260px"></select></div>
+  </div>
+
+  <div class="field" style="margin-top:12px"><label>部位(歯列からクリックで選択・複数可)</label>
+    <div class="tooth-chart" id="toothChart"></div>
+    <div class="row" style="margin-top:8px;gap:8px">
+      <button type="button" class="btn btn-bulk" onclick="selectArch(['右上','左上'])">上顎 右7〜左7 一括</button>
+      <button type="button" class="btn btn-bulk" onclick="selectArch(['右下','左下'])">下顎 右7〜左7 一括</button>
+      <button type="button" class="btn btn-bulk" onclick="selectArch(['右上','左上','右下','左下'])">上下顎 右7〜左7 一括</button>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:10px">
+    <div class="field"><label>部位(自動入力・手修正可)</label>
+      <input type="text" id="buhaiInput" placeholder="例: 右上1・2" style="width:260px"></div>
+    <div class="field"><label>数量</label>
+      <input type="number" id="qtyInput" value="1" min="1" style="width:70px"></div>
+    <button class="btn btn-add" onclick="addItem()">＋ 追加</button>
+    <button class="btn" onclick="clearTeeth()" style="background:#eef2f5">部位クリア</button>
+    <button class="btn" onclick="addFreeItem()" style="background:#eef2f5">自由入力行を追加</button>
+  </div>
+  <div class="note">※ 歯を選択すると数量も自動で本数分に変わります(手修正可)。見積書内の黄色いマスは直接編集できます。金額はすべて税込です。</div>
+</div>
+
+<!-- 見積書本体 -->
+<div class="sheet" id="sheet">
+  <h1 class="q-title">御見積書</h1>
+  <div class="q-meta" id="qMeta"></div>
+  <div class="q-head">
+    <div class="q-patient">
+      <div><span class="p-name" id="qPatient">　</span> 様</div>
+      <div class="p-karte" id="qKarte"></div>
+      <div style="margin-top:14px;font-size:13px">下記のとおりお見積り申し上げます。</div>
+    </div>
+    <div class="q-clinic" id="qClinic"></div>
+  </div>
+
+  <table class="q-table">
+    <thead>
+      <tr>
+        <th style="width:28%">治療項目</th>
+        <th style="width:17%">部位</th>
+        <th style="width:14%">単価(税込・円)</th>
+        <th style="width:8%">数量</th>
+        <th style="width:14%">金額(税込・円)</th>
+        <th style="width:15%">備考</th>
+        <th class="no-print" style="width:4%"></th>
+      </tr>
+    </thead>
+    <tbody id="lineBody"></tbody>
+  </table>
+
+  <div class="totals" id="totals"></div>
+
+  <div class="q-remarks">
+    <strong>備考</strong>
+    <textarea placeholder="お支払い方法、治療上の注意点などをご記入ください"></textarea>
+  </div>
+
+  <div class="q-notice" contenteditable="true">・上記の治療内容は自費診療の項目のみを記載しており、保険診療の費用は含まれておりません。
+・当院では、自費診療を受診された際、自費処置基本料として受診ごとに1,100円(税込)を別途申し受けております。
+・本見積書の金額は、治療計画の変更等により変動する場合があります。
+・金額はすべて税込表示です。</div>
+  <div class="q-consent">
+    <div class="c-text">上記の見積内容について説明を受け、内容を理解のうえ同意いたします。</div>
+    <div class="sig-row">
+      <span class="sig-label">同意日</span>
+      <span class="sig-wrap">西暦<canvas class="sig-pad sig-year" id="sigYear"></canvas>年<canvas class="sig-pad sig-md" id="sigMonth"></canvas>月<canvas class="sig-pad sig-md" id="sigDay"></canvas>日
+        <button type="button" class="sig-clear no-print" onclick="clearSig('sigYear');clearSig('sigMonth');clearSig('sigDay')">クリア</button></span>
+    </div>
+    <div class="sig-row">
+      <span class="sig-label">患者署名</span>
+      <span class="sig-wrap"><canvas class="sig-pad" id="sigPatient"></canvas>
+        <button type="button" class="sig-clear no-print" onclick="clearSig('sigPatient')">クリア</button></span>
+    </div>
+    <div class="sig-row">
+      <span class="sig-label">代諾者署名</span>
+      <span class="sig-wrap"><canvas class="sig-pad" id="sigProxy"></canvas>
+        <button type="button" class="sig-clear no-print" onclick="clearSig('sigProxy')">クリア</button></span>
+    </div>
+    <div class="sig-row">
+      <span class="sig-label">患者本人との関係</span>
+      <span class="sig-wrap"><canvas class="sig-pad sig-small" id="sigRel"></canvas>
+        <button type="button" class="sig-clear no-print" onclick="clearSig('sigRel')">クリア</button></span>
+    </div>
+    <div class="c-note">※患者さまが未成年の場合、またはご本人による署名が困難な場合は、代諾者(親権者・ご家族等)がご署名のうえ、患者本人との関係をご記入ください。</div>
+  </div>
+</div>
+
+<script>
+let ITEMS = [];    // {cat, name, price, note}
+let CLINICS = [];  // {name, addr, tel}
+let lines = [];    // {name, buhai, price, qty, note}
+
+/* ---------- CSV ---------- */
+function parseCSV(text) {
+  const rows = []; let row = [], cur = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(cur); cur = ""; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(cur); rows.push(row); row = []; cur = "";
+    } else cur += c;
+  }
+  if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ""));
+}
+
+async function loadData() {
+  let src = "内蔵料金表(仮価格)";
+  ITEMS = DEFAULT_ITEMS.map(r => ({cat:r[0], name:r[1], price:+r[2], note:r[3]||""}));
+  CLINICS = DEFAULT_CLINICS.map(r => ({name:r[0], addr:r[1], tel:r[2]}));
+  if (CONFIG.ITEMS_CSV_URL) {
+    try {
+      const t = await (await fetch(CONFIG.ITEMS_CSV_URL)).text();
+      const rows = parseCSV(t).slice(1); // 1行目はヘッダー
+      const parsed = rows.map(r => ({cat:r[0], name:r[1], price:+String(r[2]).replace(/[,¥\s]/g,""), note:r[3]||""}))
+                         .filter(x => x.name && !isNaN(x.price));
+      if (parsed.length) { ITEMS = parsed; src = "本部スプレッドシート(最新)"; }
+    } catch(e) { src = "内蔵料金表 ※シート読込失敗"; }
+  }
+  if (CONFIG.CLINICS_CSV_URL) {
+    try {
+      const t = await (await fetch(CONFIG.CLINICS_CSV_URL)).text();
+      const rows = parseCSV(t).slice(1);
+      const parsed = rows.map(r => ({name:r[0], addr:r[1]||"", tel:r[2]||""})).filter(x => x.name);
+      if (parsed.length) CLINICS = parsed;
+    } catch(e) {}
+  }
+  document.getElementById("dataSource").textContent = "料金表: " + src;
+  initSelectors();
+}
+
+/* ---------- 初期化 ---------- */
+function initSelectors() {
+  const cats = [...new Set(ITEMS.map(i => i.cat))];
+  document.getElementById("catSelect").innerHTML = cats.map(c => `<option>${esc(c)}</option>`).join("");
+  fillItems();
+  const cs = document.getElementById("clinicSelect");
+  cs.innerHTML = CLINICS.map((c,i) => `<option value="${i}">${esc(c.name)}</option>`).join("");
+  renderClinic(); renderMeta(); renderLines();
+}
+function fillItems() {
+  const cat = document.getElementById("catSelect").value;
+  document.getElementById("itemSelect").innerHTML = ITEMS
+    .map((it,i) => ({it,i})).filter(x => x.it.cat === cat)
+    .map(x => `<option value="${x.i}">${esc(x.it.name)}(${x.it.price.toLocaleString()}円)</option>`).join("");
+}
+
+/* ---------- 歯列チャート ---------- */
+const QUADS = ["右上","左上","右下","左下"];
+let selTeeth = new Set(); // "右上-1" 形式
+
+function buildChart() {
+  const btn = (q,n) => `<button type="button" class="tooth" id="t-${q}-${n}" onclick="toggleTooth('${q}',${n})">${n}</button>`;
+  const rowU = `<div class="tc-row"><span class="tc-side">右上</span>`
+    + [8,7,6,5,4,3,2,1].map(n=>btn("右上",n)).join("")
+    + `<span class="tc-mid"></span>`
+    + [1,2,3,4,5,6,7,8].map(n=>btn("左上",n)).join("")
+    + `<span class="tc-side">左上</span></div>`;
+  const rowL = `<div class="tc-row"><span class="tc-side">右下</span>`
+    + [8,7,6,5,4,3,2,1].map(n=>btn("右下",n)).join("")
+    + `<span class="tc-mid"></span>`
+    + [1,2,3,4,5,6,7,8].map(n=>btn("左下",n)).join("")
+    + `<span class="tc-side">左下</span></div>`;
+  document.getElementById("toothChart").innerHTML = rowU + rowL;
+}
+function toggleTooth(q, n) {
+  const key = q + "-" + n;
+  selTeeth.has(key) ? selTeeth.delete(key) : selTeeth.add(key);
+  document.getElementById("t-" + key).classList.toggle("on");
+  refreshBuhai();
+}
+function selectArch(quads) {
+  // 対象(各象限1〜7番)がすべて選択済みなら解除、そうでなければ一括選択
+  const keys = quads.flatMap(q => [1,2,3,4,5,6,7].map(n => q + "-" + n));
+  const allOn = keys.every(k => selTeeth.has(k));
+  keys.forEach(k => {
+    allOn ? selTeeth.delete(k) : selTeeth.add(k);
+    document.getElementById("t-" + k).classList.toggle("on", !allOn);
+  });
+  refreshBuhai();
+}
+function refreshBuhai() {
+  document.getElementById("buhaiInput").value = buhaiLabel();
+  if (selTeeth.size) document.getElementById("qtyInput").value = selTeeth.size;
+}
+function fmtNums(nums) {
+  // 連続する歯番を「1〜7」のように圧縮
+  const out = []; let s = nums[0], p = nums[0];
+  for (let i = 1; i <= nums.length; i++) {
+    const n = nums[i];
+    if (n === p + 1) { p = n; continue; }
+    out.push(s === p ? `${s}` : (p - s >= 2 ? `${s}〜${p}` : `${s}・${p}`));
+    s = p = n;
+  }
+  return out.join("・");
+}
+function buhaiLabel() {
+  return QUADS.map(q => {
+    const nums = [...selTeeth].filter(k => k.startsWith(q + "-")).map(k => +k.split("-")[1]).sort((a,b)=>a-b);
+    return nums.length ? q + fmtNums(nums) : "";
+  }).filter(Boolean).join("、");
+}
+function clearTeeth() {
+  selTeeth.clear();
+  document.querySelectorAll(".tooth.on").forEach(b => b.classList.remove("on"));
+  document.getElementById("buhaiInput").value = "";
+  document.getElementById("qtyInput").value = 1;
+}
+
+/* ---------- 行操作 ---------- */
+function addItem() {
+  const idx = +document.getElementById("itemSelect").value;
+  const qty = Math.max(1, +document.getElementById("qtyInput").value || 1);
+  const it = ITEMS[idx]; if (!it) return;
+  const buhai = document.getElementById("buhaiInput").value.trim();
+  lines.push({name: it.name, buhai, price: it.price, qty, note: ""}); // 備考は自動入力しない
+  clearTeeth();
+  renderLines();
+}
+function addFreeItem() {
+  lines.push({name: "", buhai: "", price: 0, qty: 1, note: "", free: true});
+  renderLines();
+}
+function delLine(i) { lines.splice(i,1); renderLines(); }
+function updLine(i, key, val) {
+  if (key === "price" || key === "qty") val = Math.max(0, +String(val).replace(/[,¥\s]/g,"") || 0);
+  lines[i][key] = val; renderTotals();
+  if (key === "price" || key === "qty") {
+    document.getElementById("amt-"+i).textContent = (lines[i].price * lines[i].qty).toLocaleString();
+  }
+}
+/* ---------- 描画 ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+function renderLines() {
+  const tb = document.getElementById("lineBody");
+  if (!lines.length) {
+    tb.innerHTML = `<tr class="empty-msg"><td colspan="7">上の「治療項目を追加」から項目を選んでください</td></tr>`;
+    renderTotals(); return;
+  }
+  tb.innerHTML = lines.map((l,i) => `<tr>
+    <td>${l.free ? `<input class="cell" value="${esc(l.name)}" placeholder="項目名を入力" oninput="updLine(${i},'name',this.value)">` : esc(l.name)}</td>
+    <td style="font-size:13px"><div class="cell-edit" contenteditable="true" oninput="updLine(${i},'buhai',this.innerText)">${esc(l.buhai||"")}</div></td>
+    <td class="num"><input class="cell num" value="${l.price.toLocaleString()}" onchange="updLine(${i},'price',this.value); this.value=lines[${i}].price.toLocaleString()"></td>
+    <td class="ctr"><input class="cell qty" type="number" min="1" value="${l.qty}" onchange="updLine(${i},'qty',this.value)"></td>
+    <td class="num" id="amt-${i}">${(l.price*l.qty).toLocaleString()}</td>
+    <td style="font-size:12px"><div class="cell-edit" contenteditable="true" oninput="updLine(${i},'note',this.innerText)">${esc(l.note||"")}</div></td>
+    <td class="ctr no-print"><button class="btn-del" onclick="delLine(${i})" title="削除">✕</button></td>
+  </tr>`).join("");
+  renderTotals();
+}
+
+function renderTotals() {
+  const grand = lines.reduce((s,l) => s + l.price*l.qty, 0);
+  document.getElementById("totals").innerHTML = `
+    <div class="t-row t-grand"><span>合計金額(税込)</span><span>¥${grand.toLocaleString()}</span></div>`;
+}
+
+function renderClinic() {
+  const c = CLINICS[+document.getElementById("clinicSelect").value] || CLINICS[0];
+  if (!c) return;
+  const dr = document.getElementById("doctorName").value;
+  document.getElementById("qClinic").innerHTML =
+    `<div>${esc(CONFIG.CORP_NAME)}</div><div class="c-name">${esc(c.name)}</div><div>${esc(c.addr)}</div><div>TEL: ${esc(c.tel)}</div>` +
+    (dr ? `<div style="margin-top:4px">説明者: <strong>${esc(dr)}</strong></div>` : "");
+}
+
+function renderMeta() {
+  const d = document.getElementById("issueDate").value;
+  const ds = d ? new Date(d+"T00:00:00").toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"}) : "";
+  document.getElementById("qMeta").textContent = "発行日: " + ds;
+  document.getElementById("qPatient").textContent = document.getElementById("patientName").value || "　";
+  const k = document.getElementById("karteNo").value;
+  document.getElementById("qKarte").textContent = k ? "カルテ番号: " + k : "";
+}
+
+/* ---------- A4 1枚に自動収縮 ---------- */
+const MMPX = 96 / 25.4;                     // 1mm あたりのピクセル数
+const PAGE_W = (210 - 30) * MMPX;           // A4幅 − 左右余白15mm
+const PAGE_H = (297 - 30) * MMPX;           // A4高さ − 上下余白15mm
+function fitA4() {
+  const sheet = document.getElementById("sheet");
+  sheet.style.zoom = ""; sheet.style.width = "";
+  sheet.classList.add("print-sim");         // 印刷時と同じ幅で高さを計測
+  const h = sheet.scrollHeight;
+  sheet.classList.remove("print-sim");
+  const z = Math.min(1, PAGE_H / h);        // 収まらない場合のみ縮小
+  if (z < 1) {
+    sheet.style.zoom = z;
+    sheet.style.width = (PAGE_W / z) + "px"; // 縮小後も紙幅いっぱいに使う
+  }
+}
+window.addEventListener("beforeprint", fitA4);
+window.addEventListener("afterprint", () => {
+  const s = document.getElementById("sheet");
+  s.style.zoom = ""; s.style.width = "";
+});
+
+/* ---------- 署名パッド(指・Apple Pencil・マウス対応) ---------- */
+function initSigPads() {
+  document.querySelectorAll("canvas.sig-pad").forEach(cv => {
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = cv.clientWidth * dpr;
+    cv.height = cv.clientHeight * dpr;
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#1a2733";
+    let drawing = false;
+    const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    cv.addEventListener("pointerdown", e => {
+      e.preventDefault(); drawing = true; cv.setPointerCapture(e.pointerId);
+      const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.lineTo(x + 0.1, y + 0.1); ctx.stroke(); // 点も残す
+    });
+    cv.addEventListener("pointermove", e => {
+      if (!drawing) return; e.preventDefault();
+      const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke();
+    });
+    const end = () => { drawing = false; };
+    cv.addEventListener("pointerup", end);
+    cv.addEventListener("pointercancel", end);
+  });
+}
+function clearSig(id) {
+  const cv = document.getElementById(id);
+  cv.getContext("2d").clearRect(0, 0, cv.width, cv.height);
+}
+
+/* ---------- PDF保存(署名込み・A4 1枚) ---------- */
+async function savePDF() {
+  if (typeof html2canvas === "undefined" || typeof jspdf === "undefined") {
+    alert("PDF作成の部品を読み込めませんでした。ネット接続を確認するか、「印刷」からPDF保存してください。");
+    return;
+  }
+  try {
+    const sheet = document.getElementById("sheet");
+    const canvas = await html2canvas(sheet, {
+      scale: 2, backgroundColor: "#ffffff", useCORS: true,
+      onclone: doc => {
+        doc.body.classList.add("pdf-mode");
+        // textareaは画像化で崩れやすいのでdivに置換(未入力なら例文は出さない)
+        doc.querySelectorAll(".q-remarks textarea").forEach(t => {
+          const d = doc.createElement("div");
+          d.style.cssText = "white-space:pre-wrap;font-size:13px;padding:8px;min-height:40px;border:1px solid #d5dde3;border-radius:6px;line-height:1.6;";
+          d.textContent = t.value;
+          t.replaceWith(d);
+        });
+      }
+    });
+    const pdf = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+    const pw = 180, ph = 267; // A4から余白15mmを除いた印字領域
+    let w = pw, h = canvas.height * pw / canvas.width;
+    if (h > ph) { w = w * ph / h; h = ph; } // 1枚に収まるよう縮小
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", (210 - w) / 2, 15, w, h);
+    const name = document.getElementById("patientName").value.trim() || "見積書";
+    const ymd = new Date().toLocaleDateString("sv-SE").replace(/-/g, "");
+    pdf.save(`見積書_${name}_${ymd}.pdf`);
+  } catch (err) {
+    alert("PDFの作成に失敗しました。「印刷」からPDF保存をお試しください。");
+  }
+}
+
+/* ---------- オールクリア ---------- */
+function clearAll() {
+  const ok = confirm("現在入力中の患者情報・治療項目・備考・署名など、すべての内容を消去します。よろしいですか?\n(医院の選択は残り、発行日は本日に戻ります)");
+  if (!ok) return;
+  ["patientName", "karteNo", "doctorName"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("issueDate").value = new Date().toLocaleDateString("sv-SE");
+  lines = [];
+  clearTeeth();
+  document.querySelector(".q-remarks textarea").value = "";
+  document.querySelector(".q-notice").innerText = DEFAULT_NOTICE;
+  document.querySelectorAll("canvas.sig-pad").forEach(cv =>
+    cv.getContext("2d").clearRect(0, 0, cv.width, cv.height));
+  renderLines(); renderMeta(); renderClinic();
+}
+
+/* ---------- 起動 ---------- */
+const DEFAULT_NOTICE = document.querySelector(".q-notice").innerText; // 注意書きの初期文言を保持
+document.getElementById("issueDate").value = new Date().toLocaleDateString("sv-SE");
+buildChart();
+initSigPads();
+loadData();
+</script>
+</body>
+</html>
