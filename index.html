@@ -11,13 +11,14 @@
 /* ============================================================
    ▼▼▼ 本部設定エリア ▼▼▼
    Googleスプレッドシートで料金を一括管理する場合は、
-   下の2つの URL に「ウェブに公開」で取得したCSVのURLを貼り付けてください。
+   下の URL に「ウェブに公開」で取得したCSVのURLを貼り付けてください。
    空欄("")のままの場合は、このファイル内蔵の料金表を使用します。
    設定手順は同梱の「設定手順書」を参照。
    ============================================================ */
 const CONFIG = {
   ITEMS_CSV_URL: "",    // 料金マスタのCSV公開URL
   CLINICS_CSV_URL: "",  // 医院リストのCSV公開URL
+  SETS_CSV_URL: "",     // セットマスタのCSV公開URL
   CORP_NAME: "医療法人社団 ○○会"  // 法人名(見積書に表示)
 };
 
@@ -56,6 +57,14 @@ const DEFAULT_CLINICS = [
   ["○○歯科クリニック 本院","〒100-0001 東京都千代田区○○1-2-3","03-0000-0001"],
   ["○○歯科クリニック 駅前医院","〒100-0002 東京都千代田区△△4-5-6","03-0000-0002"],
   ["○○歯科クリニック 中央医院","〒100-0003 東京都千代田区□□7-8-9","03-0000-0003"]
+];
+/* セットマスタ: [セット名, 治療項目名](治療項目名は料金マスタと完全一致させること) */
+const DEFAULT_SETS = [
+  ["インプラント基本セット","CT撮影・診断料"],
+  ["インプラント基本セット","インプラント埋入手術(1本)"],
+  ["インプラント基本セット","上部構造(セラミック冠)"],
+  ["矯正スタートセット","矯正相談料"],
+  ["矯正スタートセット","精密検査・診断料"]
 ];
 </script>
 <style>
@@ -96,6 +105,9 @@ const DEFAULT_CLINICS = [
 
   .btn-add { background: var(--primary); color: #fff; font-weight: bold; }
   .btn-add:hover { background: var(--primary-dark); }
+  .set-zone { border: 1px dashed var(--primary); background: var(--accent); border-radius: 8px; padding: 12px 14px; margin-top: 12px; }
+  .set-zone .set-title { font-size: 12px; font-weight: bold; color: var(--primary-dark); margin-bottom: 8px; }
+  .set-zone .set-hint { font-size: 11px; color: var(--muted); margin-top: 8px; }
   .btn-del { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; padding: 2px 6px; }
   .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
 
@@ -198,6 +210,16 @@ const DEFAULT_CLINICS = [
       <select id="catSelect" onchange="fillItems()"></select></div>
     <div class="field"><label>治療項目</label>
       <select id="itemSelect" style="min-width:260px"></select></div>
+    <button class="btn btn-add" onclick="addItem()">＋ 追加</button>
+  </div>
+
+  <div class="set-zone">
+    <div class="set-title">📦 セット入力はこちら(よく使う組み合わせを一括追加)</div>
+    <div class="row">
+      <select id="setSelect" style="min-width:240px"></select>
+      <button class="btn btn-add" onclick="addSet()">＋ セットを一括追加</button>
+    </div>
+    <div class="set-hint">選択中の部位・数量がセット内の全項目に適用されます</div>
   </div>
 
   <div class="field" style="margin-top:12px"><label>部位(歯列からクリックで選択・複数可)</label>
@@ -214,7 +236,6 @@ const DEFAULT_CLINICS = [
       <input type="text" id="buhaiInput" placeholder="例: 右上1・2" style="width:260px"></div>
     <div class="field"><label>数量</label>
       <input type="number" id="qtyInput" value="1" min="1" style="width:70px"></div>
-    <button class="btn btn-add" onclick="addItem()">＋ 追加</button>
     <button class="btn" onclick="clearTeeth()" style="background:#eef2f5">部位クリア</button>
     <button class="btn" onclick="addFreeItem()" style="background:#eef2f5">自由入力行を追加</button>
   </div>
@@ -289,7 +310,19 @@ const DEFAULT_CLINICS = [
 <script>
 let ITEMS = [];    // {cat, name, price, note}
 let CLINICS = [];  // {name, addr, tel}
+let SETS = new Map(); // セット名 → 治療項目名の配列
 let lines = [];    // {name, buhai, price, qty, note}
+
+function buildSets(rows) {
+  const m = new Map();
+  rows.forEach(r => {
+    const s = (r[0]||"").trim(), it = (r[1]||"").trim();
+    if (!s || !it) return;
+    if (!m.has(s)) m.set(s, []);
+    m.get(s).push(it);
+  });
+  return m;
+}
 
 /* ---------- CSV ---------- */
 function parseCSV(text) {
@@ -331,6 +364,14 @@ async function loadData() {
       if (parsed.length) CLINICS = parsed;
     } catch(e) {}
   }
+  SETS = buildSets(DEFAULT_SETS);
+  if (CONFIG.SETS_CSV_URL) {
+    try {
+      const t = await (await fetch(CONFIG.SETS_CSV_URL)).text();
+      const parsed = buildSets(parseCSV(t).slice(1));
+      if (parsed.size) SETS = parsed;
+    } catch(e) {}
+  }
   document.getElementById("dataSource").textContent = "料金表: " + src;
   initSelectors();
 }
@@ -342,6 +383,8 @@ function initSelectors() {
   fillItems();
   const cs = document.getElementById("clinicSelect");
   cs.innerHTML = CLINICS.map((c,i) => `<option value="${i}">${esc(c.name)}</option>`).join("");
+  document.getElementById("setSelect").innerHTML =
+    [...SETS.entries()].map(([s, arr]) => `<option value="${esc(s)}">${esc(s)}(${arr.length}項目)</option>`).join("");
   renderClinic(); renderMeta(); renderLines();
 }
 function fillItems() {
@@ -425,6 +468,19 @@ function addItem() {
 }
 function addFreeItem() {
   lines.push({name: "", buhai: "", price: 0, qty: 1, note: "", free: true});
+  renderLines();
+}
+function addSet() {
+  const items = SETS.get(document.getElementById("setSelect").value);
+  if (!items || !items.length) return;
+  const buhai = document.getElementById("buhaiInput").value.trim();
+  const qty = Math.max(1, +document.getElementById("qtyInput").value || 1);
+  items.forEach(nm => {
+    const it = ITEMS.find(x => x.name === nm);
+    if (it) lines.push({name: it.name, buhai, price: it.price, qty, note: ""});
+    else lines.push({name: nm, buhai, price: 0, qty, note: "※料金マスタに未登録", free: true});
+  });
+  clearTeeth();
   renderLines();
 }
 function delLine(i) { lines.splice(i,1); renderLines(); }
