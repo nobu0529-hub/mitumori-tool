@@ -84,6 +84,17 @@ const DEFAULT_SETS = [
   .btn-print:hover { background: #e8f2f7; }
   .btn-clearall { background: #fdecea; color: #c0392b; font-weight: bold; }
   .btn-clearall:hover { background: #f9d6d2; }
+  .btn-sigmode { background: #fff8e1; color: #8a6100; font-weight: bold; }
+  .btn-sigmode.on { background: #ffd54d; color: #5c3d00; }
+
+  /* ===== 署名モード(署名欄以外を編集不可に) ===== */
+  body.sig-mode .panel { pointer-events: none; opacity: .45; }
+  body.sig-mode .toolbar .btn:not(#sigModeBtn) { pointer-events: none; opacity: .45; }
+  body.sig-mode .sheet input.cell,
+  body.sig-mode .sheet .cell-edit,
+  body.sig-mode .q-notice,
+  body.sig-mode .q-remarks textarea,
+  body.sig-mode .btn-del { pointer-events: none; }
   .panel { max-width: 1000px; margin: 16px auto 0; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
   .panel h2 { font-size: 14px; margin: 0 0 10px; color: var(--primary-dark); border-left: 4px solid var(--primary); padding-left: 8px; }
   .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
@@ -180,6 +191,7 @@ const DEFAULT_SETS = [
 <div class="toolbar">
   <h1>自費診療 見積書作成ツール</h1>
   <span class="src" id="dataSource">料金表: 読み込み中…</span>
+  <button class="btn btn-sigmode" id="sigModeBtn" onclick="toggleSigMode()">✍ 署名モード</button>
   <button class="btn btn-clearall" onclick="clearAll()">🗑 オールクリア</button>
   <button class="btn btn-print" onclick="savePDF()">📄 PDF保存</button>
   <button class="btn btn-print" onclick="window.print()">🖨 印刷</button>
@@ -620,6 +632,14 @@ async function savePDF() {
   } catch (err) {
     alert("PDFの作成に失敗しました。「印刷」からPDF保存をお試しください。");
   }
+}
+
+/* ---------- 署名モード ---------- */
+function toggleSigMode() {
+  const on = document.body.classList.toggle("sig-mode");
+  const b = document.getElementById("sigModeBtn");
+  b.textContent = on ? "✍ 署名モード中(タップで解除)" : "✍ 署名モード";
+  b.classList.toggle("on", on);
 }
 
 /* ---------- オールクリア ---------- */
