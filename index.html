@@ -561,20 +561,9 @@
   <div class="row mid" style="gap:10px; display:none;">
     <span>医院</span><select id="clinicSel"></select>
   </div>
-  <div class="row mid" style="gap:10px; margin-top:8px;">
-    <span>カテゴリ</span><select id="mCatSel"></select>
-    <span>治療項目</span><select id="mItemSel" style="max-width:280px;"></select>
-    <button class="ip-btn" id="mAddBtn">＋ 追加</button>
-  </div>
-  <div class="set-zone">
-    <div class="sz-title">📦 セット入力はこちら（よく使う組み合わせを一括追加）</div>
-    <div class="row mid" style="gap:10px;">
-      <select id="mSetSel" style="min-width:220px;"></select>
-      <button class="ip-btn" id="mSetBtn">＋ セットを一括追加</button>
-    </div>
-    <div class="sz-note">選択中の部位・数量がセット内の全項目に適用されます</div>
-  </div>
-  <div style="margin-top:10px;">
+
+  <div style="font-weight:700; font-size:13px; color:#0b57d0; margin:4px 0 4px;">① 治療部位を選択</div>
+  <div>
     <div class="arch">
       <span class="arch-label">上顎</span>
       <span class="side-label">右</span>
@@ -597,9 +586,24 @@
     <span>部位（自動入力・手修正可）</span><input class="part-out" id="mPartOut">
     <span>数量</span><input class="qty-out" id="mQtyOut" inputmode="numeric">
     <button class="ip-btn ghost" id="mTeethClear">部位クリア</button>
+  </div>
+
+  <div style="font-weight:700; font-size:13px; color:#0b57d0; margin:14px 0 4px;">② 治療項目を追加</div>
+  <div class="row mid" style="gap:10px;">
+    <span>カテゴリ</span><select id="mCatSel"></select>
+    <span>治療項目</span><select id="mItemSel" style="max-width:280px;"></select>
+    <button class="ip-btn" id="mAddBtn">＋ 追加</button>
     <button class="ip-btn ghost" id="mFreeBtn">自由入力行を追加</button>
   </div>
-  <div class="ip-note">歯をタップで選択（8＝親知らず、複数可）→「＋追加」または「＋セットを一括追加」で見積欄に行が追加されます。金額はすべて税込です（黄色い欄は手修正可）。</div>
+  <div class="set-zone">
+    <div class="sz-title">📦 セット入力はこちら（よく使う組み合わせを一括追加）</div>
+    <div class="row mid" style="gap:10px;">
+      <select id="mSetSel" style="min-width:220px;"></select>
+      <button class="ip-btn" id="mSetBtn">＋ セットを一括追加</button>
+    </div>
+    <div class="sz-note">選択中の部位・数量がセット内の全項目に適用されます</div>
+  </div>
+  <div class="ip-note">①で歯をタップ（8＝親知らず、複数可）→ ②で項目またはセットを追加すると、選択中の部位・数量が入った行が見積欄に追加されます。金額はすべて税込です（黄色い欄は手修正可）。</div>
 </div>
 
 <div class="sheet-outer"><div class="sheet-scale"><div class="sheet portrait" style="font-size:12.5px; line-height:1.5; padding:30px 36px;">
@@ -1394,7 +1398,6 @@ let mTeethClearFn = () => {};
       '　部位（<input class="fill w-part part">）　' +
       (free ? '¥<input class="fill w-s prcIn" inputmode="numeric">' : '¥<span class="prc">' + price.toLocaleString() + '</span>') +
       '×（<input class="fill w-xs qty">）＝¥<span class="amt b">0</span>' +
-      '　備考（<input class="fill note" style="width:110px; font-size:11px;">）' +
       '<button class="row-del" type="button" title="この行を削除">✕</button>';
     if (free && name) row.querySelector('.nmIn').value = name;
     row.querySelector('.qty').value = $('mQtyOut').value || 1;
