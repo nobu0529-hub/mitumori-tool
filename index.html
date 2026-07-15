@@ -162,6 +162,17 @@
   .ip-btn.ghost { background: #fff; color: #26374d; border: 1px solid #cdd6e2; font-weight: 600; }
   .ip-note { font-size: 12px; color: #7a889c; margin-top: 6px; }
   body.signmode .item-panel { opacity: .5; pointer-events: none; }
+  .cat-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+  .cat-tab { border: 1px solid #d5dce5; background: #eef1f5; border-radius: 9px; padding: 8px 14px; font-size: 13.5px; font-weight: 600; color: #4a5665; }
+  .cat-tab.active { background: #5f6e7e; border-color: #5f6e7e; color: #fff; }
+  .item-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .item-btn { border: 1px solid #cdd6e2; background: #fff; border-radius: 10px; padding: 9px 14px; font-size: 13.5px; font-weight: 600; color: #26374d; text-align: left; }
+  .item-btn small { display: block; font-weight: 400; color: #7a889c; font-size: 11.5px; margin-top: 2px; }
+  .item-btn.sel { background: #e5f0ff; border-color: #1668ff; color: #0b3f9e; }
+  .item-btn.sel::before { content: "✓ "; color: #1668ff; font-weight: 700; }
+  .item-btn.setb { border-color: #9cc0ff; background: #fff; color: #0b3f9e; }
+  .item-btn.setb:active { background: #eaf3ff; }
+  .ip-btn:disabled { opacity: .45; }
   .set-zone { border: 1px dashed #1668ff; background: #f2f7ff; border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
   .set-zone .sz-title { font-size: 12.5px; font-weight: 700; color: #0b57d0; margin-bottom: 6px; }
   .set-zone .sz-note { font-size: 11.5px; color: #7a889c; margin-top: 6px; }
@@ -588,22 +599,24 @@
     <button class="ip-btn ghost" id="mTeethClear">部位クリア</button>
   </div>
 
-  <div style="font-weight:700; font-size:13px; color:#0b57d0; margin:14px 0 4px;">② 治療項目を追加</div>
-  <div class="row mid" style="gap:10px;">
-    <span>カテゴリ</span><select id="mCatSel"></select>
-    <span>治療項目</span><select id="mItemSel" style="max-width:280px;"></select>
-    <button class="ip-btn" id="mAddBtn">＋ 追加</button>
-    <button class="ip-btn ghost" id="mFreeBtn">自由入力行を追加</button>
+  <div style="font-weight:700; font-size:13px; color:#0b57d0; margin:14px 0 4px;">② 治療項目を追加（タップですぐ追加されます）</div>
+  <div class="cat-tabs" id="mCatTabs"></div>
+  <div class="item-grid" id="mItemGrid"></div>
+  <div class="row mid" style="margin-top:10px;">
+    <button class="ip-btn" id="mAddSelBtn" disabled>項目をタップして選択してください</button>
   </div>
   <div class="set-zone">
-    <div class="sz-title">📦 セット入力はこちら（よく使う組み合わせを一括追加）</div>
-    <div class="row mid" style="gap:10px;">
-      <select id="mSetSel" style="min-width:220px;"></select>
-      <button class="ip-btn" id="mSetBtn">＋ セットを一括追加</button>
+    <div class="sz-title">📦 セット（タップで選択 → 下のボタンで一括追加）</div>
+    <div class="item-grid" id="mSetGrid"></div>
+    <div class="row mid" style="margin-top:8px;">
+      <button class="ip-btn" id="mSetAddBtn" disabled>セットをタップして選択してください</button>
     </div>
     <div class="sz-note">選択中の部位・数量がセット内の全項目に適用されます</div>
   </div>
-  <div class="ip-note">①で歯をタップ（8＝親知らず、複数可）→ ②で項目またはセットを追加すると、選択中の部位・数量が入った行が見積欄に追加されます。金額はすべて税込です（黄色い欄は手修正可）。</div>
+  <div class="row mid" style="margin-top:10px;">
+    <button class="ip-btn ghost" id="mFreeBtn">自由入力行を追加</button>
+  </div>
+  <div class="ip-note">①で歯をタップ（8＝親知らず、複数可）→ ②で項目をタップして選択（複数可）→「＋選択した○件を見積に追加」で、部位・数量が入った行が見積欄に追加されます。セットも同様にタップで選択してボタンで一括追加。金額はすべて税込です（黄色い欄は手修正可）。</div>
 </div>
 
 <div class="sheet-outer"><div class="sheet-scale"><div class="sheet portrait" style="font-size:12.5px; line-height:1.5; padding:30px 36px;">
@@ -1409,14 +1422,9 @@ let mTeethClearFn = () => {};
     setTimeout(() => { row.style.background = ''; }, 600);
     fitAll();
   }
-  $('mAddBtn').onclick = () => {
-    const it = M_ITEMS[+$('mItemSel').value];
-    if (!it) return;
-    addRow(it.name, it.price, false);
-    mTeethClearFn();
-  };
-  $('mSetBtn').onclick = () => {
-    const arr = M_SETS.get($('mSetSel').value);
+  window.mAddRow = (name, price, free) => addRow(name, price, free);
+  window.mAddSet = name => {
+    const arr = M_SETS.get(name);
     if (!arr || !arr.length) return;
     arr.forEach(nm => {
       const it = M_ITEMS.find(x => x.name === nm);
@@ -1438,22 +1446,90 @@ let mTeethClearFn = () => {};
 })();
 
 /* 見積書：セレクタ・医院情報の反映 */
+let mCurCat = null;
+let mSelIdx = new Set();
+let mSelSets = new Set();
+function mUpdateSetBtn() {
+  const n = mSelSets.size;
+  const b = $('mSetAddBtn');
+  b.textContent = n ? '＋ 選択した' + n + 'セットを一括追加' : 'セットをタップして選択してください';
+  b.disabled = !n;
+}
+function mUpdateAddBtn() {
+  const n = mSelIdx.size;
+  const b = $('mAddSelBtn');
+  b.textContent = n ? '＋ 選択した' + n + '件を見積に追加' : '項目をタップして選択してください';
+  b.disabled = !n;
+}
 function mFillSelectors() {
   const cats = [...new Set(M_ITEMS.map(i => i.cat))];
-  $('mCatSel').innerHTML = cats.map(c => '<option>' + escg(c) + '</option>').join('');
-  mFillItems();
-  $('mCatSel').onchange = mFillItems;
-  $('mSetSel').innerHTML = [...M_SETS.entries()]
-    .map(([s, arr]) => '<option value="' + escg(s) + '">' + escg(s) + '（' + arr.length + '項目）</option>').join('');
+  if (!cats.includes(mCurCat)) mCurCat = cats[0] || null;
+  const tabs = $('mCatTabs'); tabs.innerHTML = '';
+  cats.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cat-tab' + (c === mCurCat ? ' active' : '');
+    b.textContent = c;
+    b.onclick = () => { mCurCat = c; mFillSelectors(); };
+    tabs.appendChild(b);
+  });
+  const grid = $('mItemGrid'); grid.innerHTML = '';
+  M_ITEMS.forEach((it, i) => {
+    if (it.cat !== mCurCat) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'item-btn' + (mSelIdx.has(i) ? ' sel' : '');
+    b.innerHTML = escg(it.name) + '<small>' + it.price.toLocaleString() + '円</small>';
+    b.onclick = () => {
+      if (mSelIdx.has(i)) mSelIdx.delete(i); else mSelIdx.add(i);
+      b.classList.toggle('sel', mSelIdx.has(i));
+      mUpdateAddBtn();
+    };
+    grid.appendChild(b);
+  });
+  mUpdateAddBtn();
+  $('mAddSelBtn').onclick = () => {
+    if (!mSelIdx.size) return;
+    [...mSelIdx].sort((a, b2) => a - b2).forEach(i => {
+      const it = M_ITEMS[i];
+      if (it) window.mAddRow(it.name, it.price, false);
+    });
+    mSelIdx.clear();
+    mTeethClearFn();
+    mFillSelectors();
+  };
+  const sg = $('mSetGrid'); sg.innerHTML = '';
+  [...M_SETS.entries()].forEach(([s, arr]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'item-btn setb' + (mSelSets.has(s) ? ' sel' : '');
+    b.innerHTML = '📦 ' + escg(s) + '<small>' + arr.length + '項目</small>';
+    b.onclick = () => {
+      if (mSelSets.has(s)) mSelSets.delete(s); else mSelSets.add(s);
+      b.classList.toggle('sel', mSelSets.has(s));
+      mUpdateSetBtn();
+    };
+    sg.appendChild(b);
+  });
+  mUpdateSetBtn();
+  $('mSetAddBtn').onclick = () => {
+    if (!mSelSets.size) return;
+    [...mSelSets].forEach(name => {
+      const arr = M_SETS.get(name);
+      if (!arr) return;
+      arr.forEach(nm => {
+        const it = M_ITEMS.find(x => x.name === nm);
+        if (it) window.mAddRow(it.name, it.price, false);
+        else window.mAddRow(nm + '（料金マスタに未登録）', 0, true);
+      });
+    });
+    mSelSets.clear();
+    mTeethClearFn();
+    mFillSelectors();
+  };
   $('clinicSel').innerHTML = M_CLINICS.map((c, i) => '<option value="' + i + '">' + escg(c.name) + '</option>').join('');
   $('clinicSel').onchange = mRenderClinic;
   mRenderClinic();
-}
-function mFillItems() {
-  const cat = $('mCatSel').value;
-  $('mItemSel').innerHTML = M_ITEMS
-    .map((it, i) => ({ it, i })).filter(x => x.it.cat === cat)
-    .map(x => '<option value="' + x.i + '">' + escg(x.it.name) + '（' + x.it.price.toLocaleString() + '円）</option>').join('');
 }
 function mRenderClinic() {
   const c = M_CLINICS[+$('clinicSel').value] || M_CLINICS[0];
