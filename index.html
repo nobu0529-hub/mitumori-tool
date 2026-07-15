@@ -6,6 +6,12 @@
 <title>書類作成ツール（見積書・同意書・保証書）</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  canvas, .sig, .z-wrap, .mark-layer, .sig-card, .sig-card *, .numpad, .tooth, .teeth, .tooth-chart,
+  .toolbar, .card, .cat-tab, .item-row, .ip-btn, .chk, .pill2 {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .sig-card input, .sig-card select { -webkit-user-select: auto; user-select: auto; }
+  body.markmode .sheet, body.signmode .sheet { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; background: #eef1f5; color: #1c2733; overscroll-behavior: none; }
   button { font-family: inherit; cursor: pointer; }
 
@@ -198,16 +204,13 @@
     #pages { padding: 0; overflow: visible; }
     .doc-pane { display: none !important; }
     .doc-pane.active { display: block !important; }
-    .sheet-scale { transform: none !important; }
-    .sheet-outer { height: auto !important; }
+
     .sheet { box-shadow: none; min-height: 0; }
     .fill, .tooth-cross input, .sig, .chk.on, .note-edit { background: #fff !important; }
     .sig .under { color: #ddd; }
     body.print-all .doc-pane { display: none !important; }
     body.print-all .doc-pane.print-sel { display: block !important; break-after: page; page-break-after: always; }
     body.print-all .doc-pane.print-sel:last-of-type { break-after: auto; page-break-after: auto; }
-    body.print-all .sheet-scale { transform: var(--pscale, none) !important; transform-origin: top left; }
-    body.print-all .sheet-outer { width: var(--pwidth, auto) !important; height: var(--pheight, auto) !important; margin: 0 !important; overflow: hidden; }
   }
   #printChoice.open { display: flex; }
 </style>
@@ -808,42 +811,12 @@ const CORPS = [
     ]
   },
   {
-    corpName: "医療法人社団 祥正会",
-    ITEMS_CSV_URL: "",
-    CLINICS_CSV_URL: "",
-    SETS_CSV_URL: ""
-  },
-  {
-    corpName: "一般社団法人 博結会",
-    ITEMS_CSV_URL: "",
-    CLINICS_CSV_URL: "",
-    SETS_CSV_URL: ""
-  },
-  {
     corpName: "一般社団法人 SDO",
-    ITEMS_CSV_URL: "",
-    CLINICS_CSV_URL: "",
-    SETS_CSV_URL: ""
-  },
-  {
-    corpName: "医療法人 冨森会",
-    ITEMS_CSV_URL: "",
-    CLINICS_CSV_URL: "",
-    SETS_CSV_URL: ""
-  },
-  {
-    corpName: "医療法人 ハレクラニ",
-    ITEMS_CSV_URL: "",
-    CLINICS_CSV_URL: "",
-    SETS_CSV_URL: ""
-  },
-  {
-    corpName: "その他の医院",
     ITEMS_CSV_URL: "",
     CLINICS_CSV_URL: "",
     SETS_CSV_URL: "",
     CLINICS: [
-      ["その他の医院", "", ""]
+      ["（医院未登録）", "", ""]
     ]
   }
 ];
@@ -1999,55 +1972,68 @@ function orientStyle(text) {
   if (!st) { st = document.createElement('style'); st.id = 'pageOrient'; document.head.appendChild(st); }
   st.textContent = text;
 }
-function printCurrent() {
-  const pane = panes[selected[active]];
-  orientStyle(`@page { size: A4 ${pane.dataset.orient === 'landscape' ? 'landscape' : 'portrait'}; margin: 8mm; }`);
-  window.print();
+function applyPrintFit(pane, availW, availH, rotate) {
+  const wasActive = pane.classList.contains('active');
+  if (!wasActive) pane.classList.add('active');
+  const sheet = pane.querySelector('.sheet');
+  const w = sheet.offsetWidth, hh = sheet.offsetHeight;
+  if (!wasActive) pane.classList.remove('active');
+  const scaleEl = pane.querySelector('.sheet-scale');
+  const outer = pane.querySelector('.sheet-outer');
+  let k, pw, ph, tf;
+  if (rotate) {
+    k = Math.min(availW / hh, availH / w, 1);
+    tf = 'translateX(' + Math.round(hh * k) + 'px) rotate(90deg) scale(' + k + ')';
+    pw = Math.round(hh * k); ph = Math.round(w * k);
+  } else {
+    k = Math.min(availW / w, availH / hh, 1);
+    tf = 'scale(' + k + ')';
+    pw = Math.round(w * k); ph = Math.round(hh * k);
+  }
+  scaleEl.style.transform = tf;
+  outer.style.width = pw + 'px';
+  outer.style.height = ph + 'px';
+  outer.style.margin = '0';
 }
-function printAllDocs() {
-  orientStyle('@page { size: A4 portrait; margin: 8mm; }');
-  const availW = 735, availH = 1044;   // A4(210×297mm)−余白8mm を96dpi換算
-  const items = selected.map(i => panes[i]);
-  items.forEach(pane => {
-    const wasActive = pane.classList.contains('active');
-    if (!wasActive) pane.classList.add('active');   // 一時表示して実寸を計測
-    const sheet = pane.querySelector('.sheet');
-    const w = sheet.offsetWidth, hh = sheet.offsetHeight;
-    if (!wasActive) pane.classList.remove('active');
+function clearPrintFit(list) {
+  list.forEach(pane => {
+    pane.classList.remove('print-sel');
     const scaleEl = pane.querySelector('.sheet-scale');
     const outer = pane.querySelector('.sheet-outer');
-    const landscape = sheet.classList.contains('landscape');
-    let k, pw, ph, tf;
-    if (landscape) {
-      k = Math.min(availW / hh, availH / w, 1);
-      tf = 'translateX(' + Math.round(hh * k) + 'px) rotate(90deg) scale(' + k + ')';
-      pw = Math.round(hh * k); ph = Math.round(w * k);
-    } else {
-      k = Math.min(availW / w, availH / hh, 1);
-      tf = 'scale(' + k + ')';
-      pw = Math.round(w * k); ph = Math.round(hh * k);
-    }
-    scaleEl.style.setProperty('--pscale', tf);
-    outer.style.setProperty('--pwidth', pw + 'px');
-    outer.style.setProperty('--pheight', ph + 'px');
-    pane.classList.add('print-sel');
+    scaleEl.style.transform = '';
+    outer.style.width = ''; outer.style.height = ''; outer.style.margin = '';
   });
-  document.body.classList.add('print-all');
+  document.body.classList.remove('print-all');
+  fitAll();
+}
+function runPrint(list) {
   const cleanup = () => {
-    document.body.classList.remove('print-all');
-    items.forEach(pane => {
-      pane.classList.remove('print-sel');
-      pane.querySelector('.sheet-scale').style.removeProperty('--pscale');
-      const outer = pane.querySelector('.sheet-outer');
-      outer.style.removeProperty('--pwidth');
-      outer.style.removeProperty('--pheight');
-    });
-    fitAll();
+    clearPrintFit(list);
     window.removeEventListener('afterprint', cleanup);
   };
   window.addEventListener('afterprint', cleanup);
   window.print();
   setTimeout(cleanup, 1500);
+}
+function printCurrent() {
+  const pane = panes[selected[active]];
+  const landscape = pane.dataset.orient === 'landscape';
+  orientStyle('@page { size: A4 ' + (landscape ? 'landscape' : 'portrait') + '; margin: 8mm; }');
+  const availW = landscape ? 1063 : 735, availH = landscape ? 735 : 1044;
+  applyPrintFit(pane, availW, availH, false);
+  runPrint([pane]);
+}
+function printAllDocs() {
+  orientStyle('@page { size: A4 portrait; margin: 8mm; }');
+  const availW = 735, availH = 1044;
+  const items = selected.map(i => panes[i]);
+  items.forEach(pane => {
+    const landscape = pane.querySelector('.sheet').classList.contains('landscape');
+    applyPrintFit(pane, availW, availH, landscape);
+    pane.classList.add('print-sel');
+  });
+  document.body.classList.add('print-all');
+  runPrint(items);
 }
 $('printBtn').onclick = () => {
   if (!karteReady()) { karteAlert(); return; }
