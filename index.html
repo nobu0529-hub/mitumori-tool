@@ -1453,17 +1453,31 @@ function mFillSelectors() {
     mTeethClearFn();
     mFillSelectors();
   };
-  $('clinicSel').innerHTML = M_CLINICS.map((c, i) => '<option value="' + i + '">' + escg(c.name) + '</option>').join('');
+  let saved = -1;
+  try { saved = parseInt(localStorage.getItem(clinicKey()) ?? '-1', 10); } catch (e) {}
+  if (!(saved >= 0 && saved < M_CLINICS.length)) saved = -1;
+  $('clinicSel').innerHTML = '<option value="-1">医院名を選択してください</option>'
+    + M_CLINICS.map((c, i) => '<option value="' + i + '">' + escg(c.name) + '</option>').join('');
+  $('clinicSel').value = String(saved);
   $('clinicSel').onchange = mRenderClinic;
   mRenderClinic();
 }
+function clinicKey() { return corp ? 'clinic|' + corp.corpName : 'clinic|'; }
 function mRenderClinic() {
-  const c = M_CLINICS[+$('clinicSel').value] || M_CLINICS[0];
-  if (!c) return;
+  const idx = parseInt($('clinicSel').value, 10);
+  const c = (idx >= 0) ? M_CLINICS[idx] : null;
+  if (!c) {   // 未選択: 見積書の医院欄は空欄のまま
+    $('mCorpName').textContent = '';
+    $('mClinicName').textContent = '';
+    $('mClinicAddr').textContent = '';
+    $('mClinicTel').textContent = '';
+    return;
+  }
   $('mCorpName').textContent = corp ? corp.corpName : '';
   $('mClinicName').textContent = c.name;
   $('mClinicAddr').textContent = c.addr;
   $('mClinicTel').textContent = c.tel ? 'TEL: ' + c.tel : '';
+  try { localStorage.setItem(clinicKey(), String(idx)); } catch (e) {}   // この端末の医院として記憶
 }
 
 /* ---------- 既往歴チェックと「なし・あり」の連動（外科） ---------- */
@@ -2342,8 +2356,9 @@ async function fetchClinicsFor(c) {
       const t = new Date();
       $('infoDate').value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     }
-    $('infoClinic').innerHTML = M_CLINICS.map((c, i) => '<option value="' + i + '">' + escg(c.name) + '</option>').join('');
-    $('infoClinic').value = $('clinicSel').value || 0;
+    $('infoClinic').innerHTML = '<option value="-1">医院名を選択してください</option>'
+      + M_CLINICS.map((c, i) => '<option value="' + i + '">' + escg(c.name) + '</option>').join('');
+    $('infoClinic').value = $('clinicSel').value;
     $('infoIdNum').value = window.ptIdValue || '';
     fillInfoStaff();
     $('infoModal').style.display = 'flex';
