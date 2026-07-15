@@ -270,9 +270,9 @@
     <button class="tbtn danger staff-lock" id="clearAllBtn">↺ <span class="lbl">この書類を初期化</span></button>
     <button class="tbtn danger2 staff-lock" id="clearDocsBtn">↺ <span class="lbl">全書類を初期化</span></button>
   </div>
-  </div>
   <div id="signBanner">✍ 患者署名モード中 — 患者様記載欄のみ操作できます（解除はスタッフがボタンを押してパスワードを入力）</div>
   <div class="doc-tabs" id="docTabs"></div>
+  </div>
   <div id="pages"></div>
 </div>
 
@@ -2435,6 +2435,30 @@ async function fetchClinicsFor(c) {
       box.classList.add('signed');
     });
   }
+})();
+
+/* ---------- ピンチ拡大時もツールバー等を画面に固定 ---------- */
+(function pinUiToViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const targets = ['.toolbars', '#sigModal', '#infoModal', '#pdfChoice', '#printChoice', '#setModal', '#pwModal'];
+  let raf = null;
+  function upd() {
+    raf = null;
+    const s = vv.scale, x = vv.offsetLeft, y = vv.offsetTop;
+    const zoomed = s > 1.01 || x > 1 || y > 1;
+    const t = zoomed ? 'translate(' + x + 'px,' + y + 'px) scale(' + (1 / s) + ')' : '';
+    targets.forEach(q => {
+      const el = document.querySelector(q);
+      if (!el) return;
+      el.style.transformOrigin = 'top left';
+      el.style.transform = t;
+    });
+  }
+  const req = () => { if (!raf) raf = requestAnimationFrame(upd); };
+  vv.addEventListener('resize', req);
+  vv.addEventListener('scroll', req);
+  window.addEventListener('scroll', req, true);
 })();
 
 /* 起動時：内蔵データでセレクタを準備（法人選択後にマスタで上書き） */
