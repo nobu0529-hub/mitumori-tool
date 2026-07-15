@@ -1550,8 +1550,8 @@ function openSigModal(box) {
   zonesEl.innerHTML = '';
   sigZones = [];
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const availW = Math.min(window.innerWidth - 70, 940);
-  const zoneMaxH = Math.max(140, (window.innerHeight * 0.60) / boxes.length - 40);
+  const availW = Math.min(document.documentElement.clientWidth - 70, 940);   // ピンチ拡大の影響を受けないレイアウト幅を基準にする
+  const zoneMaxH = Math.max(140, (document.documentElement.clientHeight * 0.60) / boxes.length - 40);
   boxes.forEach(b => {
     const zone = document.createElement('div');
     zone.className = 'sig-zone';
@@ -2322,8 +2322,8 @@ async function fetchClinicsFor(c) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111827'; ctx.lineWidth = 3.5;
     attachPad(cv);
   }
-  setup(nameCv, Math.min(window.innerWidth - 100, 560), 110);
-  setup(staffCv, Math.min(window.innerWidth - 100, 440), 90);
+  setup(nameCv, Math.min(document.documentElement.clientWidth - 100, 560), 110);
+  setup(staffCv, Math.min(document.documentElement.clientWidth - 100, 440), 90);
   const clearCv = cv => {
     const c = cv.getContext('2d');
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
